@@ -198,30 +198,23 @@ func (c *Config) Sync() {
 	}
 	for _, entry := range dirEntries {
 		entryName := filepath.Join(vendoredDir, entry.Name())
-		if entry.IsDir() {
-			if !c.contains(entryName) {
-				fmt.Printf("removing directory %s\n", entryName)
-				_ = os.RemoveAll(entryName)
-			}
-		} else {
-			fi, err := entry.Info()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to get file info: %v", err)
-				continue
-			}
-			// is symlink?
-			if fi.Mode().Type() == os.ModeSymlink {
-				if !c.contains(entry.Name()) {
-					fmt.Printf("removing symlink %s\n", entryName)
-					if err := os.Remove(entryName); err != nil {
-						fmt.Fprintf(os.Stderr, "failed to remove %s: %v\n", entryName, err)
-					}
-				}
-			} else {
-				fmt.Printf("removing unexpected file %s\n", entryName)
-				_ = os.Remove(entryName)
-			}
+		fi, err := entry.Info()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to get file info: %v", err)
 			continue
+		}
+
+		// is symlink?
+		if fi.Mode().Type() == os.ModeSymlink {
+			if err := os.Remove(entryName); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to remove symlink %s: %v\n", entryName, err)
+			}
+		} else if entry.IsDir() {
+			_ = os.RemoveAll(entryName)
+		} else {
+			if err := os.Remove(entryName); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to remove %s: %v\n", entryName, err)
+			}
 		}
 	}
 
@@ -253,11 +246,7 @@ func (s Source) get(wg *sync.WaitGroup) {
 	defer wg.Done()
 	dir := filepath.Join(user.Location(), s.Name())
 	referenceName := plumbing.ReferenceName(s.ReferenceName)
-	if _, err := os.Stat(dir); err == nil {
-		// exists, do nothing
-		return
-	} else {
-		// clone the repository
+	if _, err := os.Stat(dir); err != nil {
 		git.PlainClone(dir, false, &git.CloneOptions{URL: s.Url, Depth: 1, ReferenceName: referenceName, RecurseSubmodules: 20})
 	}
 
