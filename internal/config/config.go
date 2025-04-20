@@ -8,6 +8,7 @@ import (
 	unixpath "path"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"vend/internal/user"
 
@@ -80,7 +81,12 @@ var sourceRE = regexp.MustCompile(`^(.+)@([^@]+)$`)
 func (c *Config) Add(source string) error {
 	match := sourceRE.FindStringSubmatch(source)
 	if len(match) != 3 {
-		return fmt.Errorf("invalid source format, expected '<url>@≤tag>'")
+		return fmt.Errorf("invalid source format, expected '<url>@<tag>'")
+	}
+	for _, s := range c.Sources {
+		if s.Url == match[1] {
+			return fmt.Errorf("source %s exists already", source)
+		}
 	}
 	c.Sources = append(c.Sources, Source{
 		Url:           match[1],
@@ -89,7 +95,24 @@ func (c *Config) Add(source string) error {
 	return nil
 }
 
-// var gitmodulesRE = regexp.MustCompile(`\[\s*submodule\s+"([^"]+)"\s*\]\n((?:\s+\w+\s*=\s*[\w\/:.&;?-]+)+)\n`)
+func (c *Config) Remove(source string) error {
+	match := sourceRE.FindStringSubmatch(source)
+	if len(match) != 3 {
+		for i, s := range c.Sources {
+			if s.Url == source || s.Name() == source || s.ShortName() == source {
+				c.Sources = append(c.Sources[:i], c.Sources[i+1:]...)
+				return nil
+			}
+		}
+	}
+	for i, s := range c.Sources {
+		if s.Url == match[1] {
+			c.Sources = append(c.Sources[:i], c.Sources[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("source %s not found", source)
+}
 
 func (c *Config) FromGitSubmodules() error {
 	repo, err := git.PlainOpen(".")
@@ -166,32 +189,37 @@ func (c *Config) contains(name string) bool {
 }
 
 func (c *Config) Sync() {
-	dirEntries, err := os.ReadDir(user.Location())
+	vendoredDir := "vendored"
+	_ = os.MkdirAll(vendoredDir, 0755)
+	dirEntries, err := os.ReadDir(vendoredDir)
 	if err != nil {
-		fmt.Printf("failed to read directory: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to read directory: %v", err)
 		return
 	}
 	for _, entry := range dirEntries {
+		entryName := filepath.Join(vendoredDir, entry.Name())
 		if entry.IsDir() {
-			if !c.contains(entry.Name()) {
-				fmt.Printf("removing directory %s\n", entry.Name())
-				_ = os.RemoveAll(entry.Name())
+			if !c.contains(entryName) {
+				fmt.Printf("removing directory %s\n", entryName)
+				_ = os.RemoveAll(entryName)
 			}
 		} else {
 			fi, err := entry.Info()
 			if err != nil {
-				fmt.Printf("failed to get file info: %v", err)
+				fmt.Fprintf(os.Stderr, "failed to get file info: %v", err)
 				continue
 			}
 			// is symlink?
 			if fi.Mode().Type() == os.ModeSymlink {
 				if !c.contains(entry.Name()) {
-					fmt.Printf("removing symlink %s\n", entry.Name())
-					_ = os.Remove(entry.Name())
+					fmt.Printf("removing symlink %s\n", entryName)
+					if err := os.Remove(entryName); err != nil {
+						fmt.Fprintf(os.Stderr, "failed to remove %s: %v\n", entryName, err)
+					}
 				}
 			} else {
-				fmt.Printf("removing unexpected file %s\n", entry.Name())
-				_ = os.Remove(entry.Name())
+				fmt.Printf("removing unexpected file %s\n", entryName)
+				_ = os.Remove(entryName)
 			}
 			continue
 		}
@@ -208,17 +236,17 @@ func (c *Config) Sync() {
 func (s Source) ShortName() string {
 	u, err := url.Parse(s.Url)
 	if err != nil {
-		return unixpath.Base(s.Url)
+		return strings.TrimSuffix(unixpath.Base(s.Url), ".git")
 	}
-	return unixpath.Base(u.Path)
+	return strings.TrimSuffix(unixpath.Base(u.Path), ".git")
 }
 
 func (s Source) Name() string {
 	u, err := url.Parse(s.Url)
 	if err != nil {
-		return filepath.Join(unixpath.Base(s.Url), s.ReferenceName)
+		return filepath.Join(strings.TrimSuffix(unixpath.Base(s.Url), ".git"), s.ReferenceName)
 	}
-	return filepath.Join(u.Host, unixpath.Clean(u.Path), s.ReferenceName)
+	return filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"), s.ReferenceName)
 }
 
 func (s Source) get(wg *sync.WaitGroup) {
@@ -226,28 +254,11 @@ func (s Source) get(wg *sync.WaitGroup) {
 	dir := filepath.Join(user.Location(), s.Name())
 	referenceName := plumbing.ReferenceName(s.ReferenceName)
 	if _, err := os.Stat(dir); err == nil {
-		// update the repository
-		repo, err := git.PlainOpen(dir)
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to open repository: %v", err)
-			return
-		}
-		w, err := repo.Worktree()
-		if err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "failed to get worktree: %v", err)
-			return
-		}
-		w.Checkout(&git.CheckoutOptions{
-			Branch: referenceName,
-			Create: false,
-		})
-		err = w.Pull(&git.PullOptions{ReferenceName: referenceName, Force: true})
-		if err != nil {
-			return
-		}
+		// exists, do nothing
+		return
 	} else {
 		// clone the repository
-		git.PlainClone(dir, false, &git.CloneOptions{URL: s.Url, Depth: 1, ReferenceName: referenceName})
+		git.PlainClone(dir, false, &git.CloneOptions{URL: s.Url, Depth: 1, ReferenceName: referenceName, RecurseSubmodules: 20})
 	}
 
 	// link repository to vendored directory

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"vend/internal/config"
 
 	"github.com/spf13/cobra"
@@ -18,8 +19,16 @@ var addCmd = &cobra.Command{
 			return
 		}
 
+		dir := filepath.Dir(c.Location)
+		if err := os.Chdir(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to change directory into %s: %v\n", dir, err)
+			return
+		}
+
 		for _, source := range args {
-			c.Add(source)
+			if err := c.Add(source); err != nil {
+				fmt.Fprintf(os.Stderr, "error adding source %s: %v\n", source, err)
+			}
 		}
 
 		if err := c.Save(); err != nil {
