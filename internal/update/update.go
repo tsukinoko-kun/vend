@@ -204,6 +204,7 @@ ping 127.0.0.1 -n 5 > nul
 move /Y "%s" "%s"
 start "" "%s"
 del "%%~f0"
+exit
 `, newBinaryPath, currentPath, currentPath)
 	if _, err := batFile.WriteString(script); err != nil {
 		batFile.Close()
