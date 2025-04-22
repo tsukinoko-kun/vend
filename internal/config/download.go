@@ -101,10 +101,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		for i := range m.repos {
-			m.repos[i].progress.Width = msg.Width - 4
-			if m.repos[i].progress.Width > 80 {
-				m.repos[i].progress.Width = 80
-			}
+			m.repos[i].progress.Width = min(msg.Width-4, 80)
 		}
 
 	case progressMsg:
@@ -169,15 +166,19 @@ func (m model) View() string {
 		if repo.done {
 			if repo.err != nil {
 				status = fmt.Sprintf(" [ERROR: %v]", repo.err)
+				repo.progress.FullColor = "9"
 			} else {
 				status = " [DONE]"
+				repo.progress.FullColor = "10"
 			}
 		} else if repo.downloadingSubmodules {
 			// This status is shown even when the progress bar is at 100%
 			status = " [SUBMODULES]"
+			repo.progress.FullColor = "12"
 		} else if repo.percent >= 0.99 {
 			// For repositories at 99%+ but not marked as submodule downloading or done
 			status = " [FINISHING]"
+			repo.progress.FullColor = "12"
 		}
 
 		s += fmt.Sprintf("%d. %s%s\n", i+1, repo.source.Url, status)
@@ -244,7 +245,7 @@ func CloneMultiple(sources []Source) error {
 	for i, source := range sources {
 		repos[i] = repoProgress{
 			source:   source,
-			progress: progress.New(progress.WithGradient("#FF7CCB", "#FDFF8C")),
+			progress: progress.New(progress.WithSolidFill("11")),
 			percent:  0,
 			done:     false,
 		}
