@@ -4,7 +4,7 @@ builds:
   - main: "./main.go"
     binary: vend
     ldflags:
-      - -X internal.update.Version={{ .Version }}
+      - -X vend/internal/update.Version={{ .Version }}
     goos:
       - darwin
       - linux
