@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -18,9 +19,10 @@ import (
 
 type (
 	Config struct {
-		Version  string   `yaml:"version"`
-		Location string   `yaml:"-"`
-		Sources  []Source `yaml:"sources"`
+		Version  uint              `yaml:"version"`
+		Scripts  map[string]string `yaml:"scripts"`
+		Location string            `yaml:"-"`
+		Sources  []Source          `yaml:"sources"`
 	}
 
 	Source struct {
@@ -37,7 +39,10 @@ func New() Config {
 		wd = "."
 	}
 	return Config{
-		Version:  "1.0.0",
+		Version: 1,
+		Scripts: map[string]string{
+			"foo": `echo "foo"`,
+		},
 		Location: filepath.Join(wd, configFileName),
 		Sources:  []Source{},
 	}
@@ -111,6 +116,16 @@ func (c *Config) Remove(source string) error {
 		}
 	}
 	return fmt.Errorf("source %s not found", source)
+}
+
+func (c *Config) Run(script string, args []string) error {
+	if s, ok := c.Scripts[script]; ok {
+		if err := run(s, args); err != nil {
+			return errors.Join(errors.New("failed to run script"), err)
+		}
+		return nil
+	}
+	return fmt.Errorf("script %s not found", script)
 }
 
 func (c *Config) FromGitSubmodules() error {
