@@ -9,11 +9,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
+	"vend/internal/sudo"
 	"vend/internal/user"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/goccy/go-yaml"
 )
 
@@ -179,15 +178,6 @@ func (c *Config) Save() error {
 	return nil
 }
 
-func (c *Config) contains(name string) bool {
-	for _, source := range c.Sources {
-		if source.ShortName() == name {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Config) Sync() {
 	vendoredDir := "vendored"
 	_ = os.MkdirAll(vendoredDir, 0755)
@@ -218,12 +208,17 @@ func (c *Config) Sync() {
 		}
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(c.Sources))
+	CloneMultiple(c.Sources)
+
+	wd, _ := os.Getwd()
+	linkData := make([]sudo.LinkData, 0, len(c.Sources))
 	for _, source := range c.Sources {
-		go source.get(&wg)
+		linkData = append(linkData, sudo.LinkData{
+			Old: source.DestPath(),
+			New: filepath.Join(wd, "vendored", source.ShortName()),
+		})
 	}
-	wg.Wait()
+	sudo.Link(linkData)
 }
 
 func (s Source) ShortName() string {
@@ -242,19 +237,6 @@ func (s Source) Name() string {
 	return filepath.Join(u.Host, strings.TrimSuffix(u.Path, ".git"), s.ReferenceName)
 }
 
-func (s Source) get(wg *sync.WaitGroup) {
-	defer wg.Done()
-	dir := filepath.Join(user.Location(), s.Name())
-	referenceName := plumbing.ReferenceName(s.ReferenceName)
-	if _, err := os.Stat(dir); err != nil {
-		git.PlainClone(dir, false, &git.CloneOptions{URL: s.Url, Depth: 1, ReferenceName: referenceName, RecurseSubmodules: 20})
-	}
-
-	// link repository to vendored directory
-	vendoredDir := filepath.Join("vendored", s.ShortName())
-	err := os.Symlink(dir, vendoredDir)
-	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "failed to link repository: %v", err)
-		return
-	}
+func (s Source) DestPath() string {
+	return filepath.Join(user.Location(), s.Name())
 }

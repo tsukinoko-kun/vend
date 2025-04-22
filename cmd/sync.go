@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"vend/internal/config"
 
 	"github.com/spf13/cobra"
@@ -19,7 +20,11 @@ var syncCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("Installing sources...")
+		dir := filepath.Dir(c.Location)
+		if err := os.Chdir(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to change directory into %s: %v\n", dir, err)
+			return
+		}
 
 		c.Sync()
 	},
