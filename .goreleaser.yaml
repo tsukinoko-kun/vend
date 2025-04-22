@@ -1,7 +1,10 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 ---
 builds:
-  - binary: vend
+  - main: "./main.go"
+    binary: vend
+    ldflags:
+      - -X internal.update.Version={{ .Version }}
     goos:
       - darwin
       - linux
