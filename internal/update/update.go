@@ -177,7 +177,7 @@ func extractBinary(tarFilePath, binaryName, destDir string) (string, error) {
 		outFile.Close()
 		// Make executable on Unix.
 		if runtime.GOOS != "windows" {
-			_ = os.Chmod(newBinaryPath, 0755)
+			_ = os.Chmod(newBinaryPath, 0777)
 		}
 		break
 	}
